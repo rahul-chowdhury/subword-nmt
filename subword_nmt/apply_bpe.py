@@ -28,7 +28,7 @@ argparse.open = open
 
 class BPE(object):
 
-    def __init__(self, codes, merges=-1, separator='@@', vocab=None, glossaries=None):
+    def __init__(self, codes, merges=-1, separator='@@', wordpiece_separator=False, vocab=None, glossaries=None):
 
         codes.seek(0)
         offset=1
@@ -56,6 +56,7 @@ class BPE(object):
         self.bpe_codes_reverse = dict([(pair[0] + pair[1], pair) for pair,i in self.bpe_codes.items()])
 
         self.separator = separator
+        self.is_wordpiece = wordpiece_separator
 
         self.vocab = vocab
 
@@ -102,9 +103,14 @@ class BPE(object):
                                           self.cache,
                                           self.glossaries)]
 
-            for item in new_word[:-1]:
-                output.append(item + self.separator)
-            output.append(new_word[-1])
+            if self.is_wordpiece:  # chrhad: add wordpiece handling for no-vocab-limit case
+                output.append(new_word[0])
+                for item in new_word[1:]:
+                    output.append(self.separator + item)
+            else:
+                for item in new_word[:-1]:
+                    output.append(item + self.separator)
+                output.append(new_word[-1])
 
         return output
 
@@ -146,6 +152,9 @@ def create_parser(subparsers=None):
     parser.add_argument(
         '--separator', '-s', type=str, default='@@', metavar='STR',
         help="Separator between non-final subword units (default: '%(default)s'))")
+    parser.add_argument(
+        '--wordpiece-separator', action='store_true',
+        help="Place separator string on the left of the right subwords (default: %(default)s)")
     parser.add_argument(
         '--vocabulary', type=argparse.FileType('r'), default=None,
         metavar="PATH",
@@ -239,7 +248,7 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
     cache[orig] = word
     return word
 
-def recursive_split(segment, bpe_codes, vocab, separator, final=False):
+def recursive_split(segment, bpe_codes, vocab, separator, is_wordpiece, initial=False, final=False):
     """Recursively split segment into smaller units (by reversing BPE merges)
     until all units are either in-vocabulary, or cannot be split futher."""
 
@@ -254,39 +263,47 @@ def recursive_split(segment, bpe_codes, vocab, separator, final=False):
         yield segment
         return
 
-    if left + separator in vocab:
+    if (is_wordpiece and initial and left in vocab) or (is_wordpiece and not initial and separator + left in vocab) or (not is_wordpiece and left + separator in vocab):
         yield left
     else:
-        for item in recursive_split(left, bpe_codes, vocab, separator, False):
+        for item in recursive_split(left, bpe_codes, vocab, separator, is_wordpiece, initial, False):
             yield item
 
-    if (final and right in vocab) or (not final and right + separator in vocab):
+    if (final and not is_wordpiece and right in vocab) or (not final and not is_wordpiece and right + separator in vocab) or (is_wordpiece and separator + right in vocab):
         yield right
     else:
-        for item in recursive_split(right, bpe_codes, vocab, separator, final):
+        for item in recursive_split(right, bpe_codes, vocab, separator, is_wordpiece, False, final):
             yield item
 
-def check_vocab_and_split(orig, bpe_codes, vocab, separator):
+def check_vocab_and_split(orig, bpe_codes, vocab, separator, is_wordpiece=False):
     """Check for each segment in word if it is in-vocabulary,
     and segment OOV segments into smaller units by reversing the BPE merge operations"""
 
     out = []
+    
+    segment = orig[0]
+    if (segment in vocab and is_wordpiece) or (segment + separator and not is_wordpiece):
+        out.append(segment)
+    else:
+        for item in recursive_split(segment, bpe_codes, vocab, separator, is_wordpiece, True, len(orig) == 1):
+            out.append(item)
 
-    for segment in orig[:-1]:
-        if segment + separator in vocab:
+    if len(orig) > 1:
+        for segment in orig[1:-1]:
+            if (separator + segment in vocab and is_wordpiece) or (segment + separator in vocab and not is_wordpiece):
+                out.append(segment)
+            else:
+                #sys.stderr.write('OOV: {0}\n'.format(segment))
+                for item in recursive_split(segment, bpe_codes, vocab, separator, is_wordpiece, False, False):
+                    out.append(item)
+
+        segment = orig[-1]
+        if (segment in vocab and not is_wordpiece) or (separator + segment and is_wordpiece):
             out.append(segment)
         else:
             #sys.stderr.write('OOV: {0}\n'.format(segment))
-            for item in recursive_split(segment, bpe_codes, vocab, separator, False):
+            for item in recursive_split(segment, bpe_codes, vocab, separator, is_wordpiece, False, True):
                 out.append(item)
-
-    segment = orig[-1]
-    if segment in vocab:
-        out.append(segment)
-    else:
-        #sys.stderr.write('OOV: {0}\n'.format(segment))
-        for item in recursive_split(segment, bpe_codes, vocab, separator, True):
-            out.append(item)
 
     return out
 
@@ -367,7 +384,7 @@ if __name__ == '__main__':
             args.glossaries = [g.decode('UTF-8') for g in args.glossaries]
 
 
-    bpe = BPE(args.codes, args.merges, args.separator, vocabulary, args.glossaries)
+    bpe = BPE(args.codes, args.merges, args.separator, args.wordpiece_separator, vocabulary, args.glossaries)
 
     for line in args.input:
         args.output.write(bpe.process_line(line))

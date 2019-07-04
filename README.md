@@ -5,6 +5,11 @@ This repository contains preprocessing scripts to segment text into subword
 units. The primary purpose is to facilitate the reproduction of our experiments
 on Neural Machine Translation with subword units (see below for reference).
 
+MODIFICATION
+------------
+
+Added support for BERT WordPiece compatibility, to append separator string to the subsequent subword.
+
 INSTALLATION
 ------------
 

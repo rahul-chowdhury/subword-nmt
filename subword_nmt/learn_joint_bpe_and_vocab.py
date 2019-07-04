@@ -56,17 +56,20 @@ def create_parser(subparsers=None):
         help="Output file for BPE codes.")
     parser.add_argument(
         '--symbols', '-s', type=int, default=10000,
-        help="Create this many new symbols (each representing a character n-gram) (default: %(default)s))")
+        help="Create this many new symbols (each representing a character n-gram) (default: %(default)s)")
     parser.add_argument(
         '--separator', type=str, default='@@', metavar='STR',
-        help="Separator between non-final subword units (default: '%(default)s'))")
+        help="Separator between non-final subword units (default: '%(default)s')")
+    parser.add_argument(
+        '--wordpiece-separator', action='store_true',
+        help="Place separator string on the left of the right subwords (default: %(default)s)")
     parser.add_argument(
         '--write-vocabulary', type=argparse.FileType('w'), required=True, nargs = '+', default=None,
         metavar='PATH', dest='vocab',
         help='Write to these vocabulary files after applying BPE. One per input text. Used for filtering in apply_bpe.py')
     parser.add_argument(
         '--min-frequency', type=int, default=2, metavar='FREQ',
-        help='Stop if no symbol pair has frequency >= FREQ (default: %(default)s))')
+        help='Stop if no symbol pair has frequency >= FREQ (default: %(default)s)')
     parser.add_argument(
         '--total-symbols', '-t', action="store_true",
         help="subtract number of characters from the symbols to be generated (so that '--symbols' becomes an estimate for the total number of symbols needed to encode text).")
@@ -99,7 +102,7 @@ def learn_joint_bpe_and_vocab(args):
         learn_bpe.learn_bpe(vocab_list, output, args.symbols, args.min_frequency, args.verbose, is_dict=True, total_symbols=args.total_symbols)
 
     with codecs.open(args.output.name, encoding='UTF-8') as codes:
-        bpe = apply_bpe.BPE(codes, separator=args.separator)
+        bpe = apply_bpe.BPE(codes, separator=args.separator, wordpiece_separator=args.wordpiece_separator)
 
     # apply BPE to each training corpus and get vocabulary
     for train_file, vocab_file in zip(args.input, args.vocab):
