@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Modification: includes tokenization routine, only BasicTokenizer class is given
+# Modification: includes tokenization routine as the main program, only BasicTokenizer class is given
 # Copyright 2019 Christian Hadiwinoto, NUS
 """Basic tokenization class"""
 import argparse
