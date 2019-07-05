@@ -9,6 +9,7 @@ MODIFICATION
 ------------
 
 Added support for BERT WordPiece compatibility, to append separator string to the subsequent subword.
+Script for basic tokenization for BERT is given in `basic_tokenization.py`.
 
 INSTALLATION
 ------------
