@@ -71,7 +71,7 @@ def get_vocabulary(fobj, is_dict=False):
     for i, line in enumerate(fobj):
         if is_dict:
             try:
-                word, count = line.strip('\r\n ').split(' ')
+                word, count = line.strip('\r\n ').split('\t ')
             except:
                 print('Failed reading vocabulary file at line {0}: {1}'.format(i, line))
                 sys.exit(1)
