@@ -241,7 +241,7 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
 
     # don't print end-of-word symbols
     if word[0].startswith('<w>'):
-        word = word[0].replace('<w>','') + word[1:]
+        word = (word[0].replace('<w>',''),) + word[1:]
     elif word[-1] == '</w>':
         word = word[:-1]
     elif word[-1].endswith('</w>'):
