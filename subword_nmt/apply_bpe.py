@@ -396,3 +396,4 @@ if __name__ == '__main__':
 
     for line in args.input:
         args.output.write(bpe.process_line(line))
+    args.codes.close()
