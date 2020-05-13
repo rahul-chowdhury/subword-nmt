@@ -28,7 +28,7 @@ argparse.open = open
 
 class BPE(object):
 
-    def __init__(self, codes, merges=-1, separator='@@', wordpiece_separator=False, vocab=None, glossaries=None):
+    def __init__(self, codes, merges=-1, separator='@@', is_postpend=False, vocab=None, glossaries=None):
 
         codes.seek(0)
         offset=1
@@ -56,7 +56,7 @@ class BPE(object):
         self.bpe_codes_reverse = dict([(pair[0] + pair[1], pair) for pair,i in self.bpe_codes.items()])
 
         self.separator = separator
-        self.is_wordpiece = wordpiece_separator
+        self.is_postpend = is_postpend
 
         self.vocab = vocab
 
@@ -101,9 +101,10 @@ class BPE(object):
                                           self.separator,
                                           self.version,
                                           self.cache,
-                                          self.glossaries)]
+                                          self.glossaries,
+                                          self.is_postpend)]
 
-            if self.is_wordpiece:  # chrhad: add wordpiece handling for no-vocab-limit case
+            if self.is_postpend:  # chrhad: add handling for postpend to word-initial segment
                 output.append(new_word[0])
                 for item in new_word[1:]:
                     output.append(self.separator + item)
@@ -152,9 +153,8 @@ def create_parser(subparsers=None):
     parser.add_argument(
         '--separator', '-s', type=str, default='@@', metavar='STR',
         help="Separator between non-final subword units (default: '%(default)s'))")
-    parser.add_argument(
-        '--wordpiece-separator', action='store_true',
-        help="Place separator string on the left of the right subwords (default: %(default)s)")
+    parser.add_argument('--postpend', action='store_true',
+        help="Place subsequent subwords to the right of the first subword (default: prepend subwords to the left of the last subword)")
     parser.add_argument(
         '--vocabulary', type=argparse.FileType('r'), default=None,
         metavar="PATH",
@@ -184,7 +184,7 @@ def get_pairs(word):
         prev_char = char
     return pairs
 
-def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache, glossaries=None):
+def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache, glossaries=None, is_postpend=False):
     """Encode word based on list of BPE merge operations, which are applied consecutively
     """
 
@@ -197,8 +197,11 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
 
     if version == (0, 1):
         word = tuple(orig) + ('</w>',)
-    elif version == (0, 2): # more consistent handling of word-final segments
-        word = tuple(orig[:-1]) + ( orig[-1] + '</w>',)
+    elif version == (0, 2): # more consistent handling of word-final segments; chrhad: option to postpend to word-initial segments
+        if is_postpend:
+            word = tuple(orig[:-1]) + ( orig[-1] + '</w>',)
+        else:
+            word = ('<w>' + orig[0],) + tuple(orig[1:])
     else:
         raise NotImplementedError
 
@@ -237,7 +240,9 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
             pairs = get_pairs(word)
 
     # don't print end-of-word symbols
-    if word[-1] == '</w>':
+    if word[0].startswith('<w>'):
+        word = word[0].replace('<w>','') + word[1:]
+    elif word[-1] == '</w>':
         word = word[:-1]
     elif word[-1].endswith('</w>'):
         word = word[:-1] + (word[-1].replace('</w>',''),)
@@ -248,12 +253,15 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
     cache[orig] = word
     return word
 
-def recursive_split(segment, bpe_codes, vocab, separator, is_wordpiece, initial=False, final=False):
+def recursive_split(segment, bpe_codes, vocab, separator, is_postpend, initial=False, final=False):
     """Recursively split segment into smaller units (by reversing BPE merges)
     until all units are either in-vocabulary, or cannot be split futher."""
 
     try:
-        if final:
+        if is_postpend and initial:
+            left, right = bpe_codes['<w>' + segment]
+            left = left[3:]
+        elif not is_postpend and final:
             left, right = bpe_codes[segment + '</w>']
             right = right[:-4]
         else:
@@ -263,46 +271,46 @@ def recursive_split(segment, bpe_codes, vocab, separator, is_wordpiece, initial=
         yield segment
         return
 
-    if (is_wordpiece and initial and left in vocab) or (is_wordpiece and not initial and separator + left in vocab) or (not is_wordpiece and left + separator in vocab):
+    if (is_postpend and initial and left in vocab) or (is_postpend and not initial and separator + left in vocab) or (not is_postpend and left + separator in vocab):
         yield left
     else:
-        for item in recursive_split(left, bpe_codes, vocab, separator, is_wordpiece, initial, False):
+        for item in recursive_split(left, bpe_codes, vocab, separator, is_postpend, initial, False):
             yield item
 
-    if (final and not is_wordpiece and right in vocab) or (not final and not is_wordpiece and right + separator in vocab) or (is_wordpiece and separator + right in vocab):
+    if (final and not is_postpend and right in vocab) or (not final and not is_postpend and right + separator in vocab) or (is_postpend and separator + right in vocab):
         yield right
     else:
-        for item in recursive_split(right, bpe_codes, vocab, separator, is_wordpiece, False, final):
+        for item in recursive_split(right, bpe_codes, vocab, separator, is_postpend, False, final):
             yield item
 
-def check_vocab_and_split(orig, bpe_codes, vocab, separator, is_wordpiece=False):
+def check_vocab_and_split(orig, bpe_codes, vocab, separator, is_postpend=False):
     """Check for each segment in word if it is in-vocabulary,
     and segment OOV segments into smaller units by reversing the BPE merge operations"""
 
     out = []
     
     segment = orig[0]
-    if (segment in vocab and is_wordpiece) or (segment + separator and not is_wordpiece):
+    if (segment in vocab and is_postpend) or (segment + separator and not is_postpend):
         out.append(segment)
     else:
-        for item in recursive_split(segment, bpe_codes, vocab, separator, is_wordpiece, True, len(orig) == 1):
+        for item in recursive_split(segment, bpe_codes, vocab, separator, is_postpend, True, len(orig) == 1):
             out.append(item)
 
     if len(orig) > 1:
         for segment in orig[1:-1]:
-            if (separator + segment in vocab and is_wordpiece) or (segment + separator in vocab and not is_wordpiece):
+            if (separator + segment in vocab and is_postpend) or (segment + separator in vocab and not is_postpend):
                 out.append(segment)
             else:
                 #sys.stderr.write('OOV: {0}\n'.format(segment))
-                for item in recursive_split(segment, bpe_codes, vocab, separator, is_wordpiece, False, False):
+                for item in recursive_split(segment, bpe_codes, vocab, separator, is_postpend, False, False):
                     out.append(item)
 
         segment = orig[-1]
-        if (segment in vocab and not is_wordpiece) or (separator + segment and is_wordpiece):
+        if (segment in vocab and not is_postpend) or (separator + segment and is_postpend):
             out.append(segment)
         else:
             #sys.stderr.write('OOV: {0}\n'.format(segment))
-            for item in recursive_split(segment, bpe_codes, vocab, separator, is_wordpiece, False, True):
+            for item in recursive_split(segment, bpe_codes, vocab, separator, is_postpend, False, True):
                 out.append(item)
 
     return out
@@ -384,7 +392,7 @@ if __name__ == '__main__':
             args.glossaries = [g.decode('UTF-8') for g in args.glossaries]
 
 
-    bpe = BPE(args.codes, args.merges, args.separator, args.wordpiece_separator, vocabulary, args.glossaries)
+    bpe = BPE(args.codes, args.merges, args.separator, args.postpend, vocabulary, args.glossaries)
 
     for line in args.input:
         args.output.write(bpe.process_line(line))
