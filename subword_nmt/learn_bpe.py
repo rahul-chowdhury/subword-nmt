@@ -213,7 +213,7 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
     outfile.write('#version: 0.2\n')
 
     vocab = get_vocabulary(infile, is_dict)
-    vocab = dict([(tuple('<w>'+x[0],)+tuple(1:) ,y) for (x,y) in vocab.items()]) if is_postpend else \
+    vocab = dict([(('<w>'+x[0],)+tuple(x[1:]) ,y) for (x,y) in vocab.items()]) if is_postpend else \
         dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in vocab.items()])
     sorted_vocab = sorted(vocab.items(), key=lambda x: x[1], reverse=True)
 
