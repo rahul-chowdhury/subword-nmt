@@ -201,7 +201,7 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
         if is_postpend:
             word = ('<w>' + orig[0],) + tuple(orig[1:])
         else:
-            word = tuple(orig[:-1]) + ( orig[-1] + '</w>',)]
+            word = tuple(orig[:-1]) + (orig[-1] + '</w>',)
     else:
         raise NotImplementedError
 
