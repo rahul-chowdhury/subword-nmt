@@ -222,15 +222,22 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
 
     if total_symbols:
         uniq_char_internal = set()
-        uniq_char_final = set()
+        uniq_char_terminal = set()  # initial character for postpend, final otherwise
         for word in vocab:
-            for char in word[:-1]:
+            if is_postpend:
+                uniq_char_terminal.add(word[0])
+            else:
+                uniq_char_internal.add(word[0])
+            for char in word[1:-1]:  # always internal
                 uniq_char_internal.add(char)
-            uniq_char_final.add(word[-1])
+            if is_postpend:
+                uniq_char_internal.add(word[-1])
+            else:
+                uniq_char_terminal.add(word[-1])
         sys.stderr.write('Number of word-internal characters: {0}\n'.format(len(uniq_char_internal)))
-        sys.stderr.write('Number of word-final characters: {0}\n'.format(len(uniq_char_final)))
-        sys.stderr.write('Reducing number of merge operations by {0}\n'.format(len(uniq_char_internal) + len(uniq_char_final)))
-        num_symbols -= len(uniq_char_internal) + len(uniq_char_final)
+        sys.stderr.write('Number of word-terminal characters: {0}\n'.format(len(uniq_char_terminal)))
+        sys.stderr.write('Reducing number of merge operations by {0}\n'.format(len(uniq_char_internal) + len(uniq_char_terminal)))
+        num_symbols -= len(uniq_char_internal) + len(uniq_char_terminal)
 
     # threshold is inspired by Zipfian assumption, but should only affect speed
     threshold = max(stats.values()) / 10
