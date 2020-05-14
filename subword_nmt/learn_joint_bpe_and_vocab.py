@@ -67,6 +67,10 @@ def create_parser(subparsers=None):
     parser.add_argument(
         '--min-frequency', type=int, default=2, metavar='FREQ',
         help='Stop if no symbol pair has frequency >= FREQ (default: %(default)s)')
+    parser.add_argument('--dict-input', action="store_true",
+        help="If set, input file is interpreted as a dictionary where each line contains a word-count pair")
+    parser.add_argument('--postpend', action='store_true',
+        help="Place subsequent subwords to the right of the first subword (default: prepend subwords to the left of the last subword)")
     parser.add_argument(
         '--total-symbols', '-t', action="store_true",
         help="subtract number of characters from the symbols to be generated (so that '--symbols' becomes an estimate for the total number of symbols needed to encode text).")
@@ -91,7 +95,7 @@ def learn_joint_bpe_and_vocab(args):
     # get combined vocabulary of all input texts
     full_vocab = Counter()
     for f in args.input:
-        full_vocab += learn_bpe.get_vocabulary(f)
+        full_vocab += learn_bpe.get_vocabulary(f, args.dict_input)
         f.seek(0)
 
     vocab_list = ['{0} {1}'.format(key, freq) for (key, freq) in full_vocab.items()]
