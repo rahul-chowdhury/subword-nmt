@@ -199,9 +199,9 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
         word = tuple(orig) + ('</w>',)
     elif version == (0, 2): # more consistent handling of word-final segments; chrhad: option to postpend to word-initial segments
         if is_postpend:
-            word = tuple(orig[:-1]) + ( orig[-1] + '</w>',)
-        else:
             word = ('<w>' + orig[0],) + tuple(orig[1:])
+        else:
+            word = tuple(orig[:-1]) + ( orig[-1] + '</w>',)]
     else:
         raise NotImplementedError
 
