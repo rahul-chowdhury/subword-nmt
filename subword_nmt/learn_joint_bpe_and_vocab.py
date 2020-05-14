@@ -74,8 +74,6 @@ def create_parser(subparsers=None):
     parser.add_argument(
         '--total-symbols', '-t', action="store_true",
         help="subtract number of characters from the symbols to be generated (so that '--symbols' becomes an estimate for the total number of symbols needed to encode text).")
-    parser.add_argument('--postpend', action='store_true',
-        help="Place subsequent subwords to the right of the first subword (default: prepend subwords to the left of the last subword)")
     parser.add_argument(
         '--verbose', '-v', action="store_true",
         help="verbose mode.")
