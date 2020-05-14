@@ -112,7 +112,7 @@ def learn_joint_bpe_and_vocab(args):
             for i, line in enumerate(train_file):
                 try:
                     word, count = line.strip('\r\n ').split(' ')
-                    segments = bpe.segment([word])
+                    segments = bpe.segment_tokens([word])
                 except:
                     print('Failed reading vocabulary file at line {0}: {1}'.format(i, line))
                     sys.exit(1)
