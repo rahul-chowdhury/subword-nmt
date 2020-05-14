@@ -121,7 +121,7 @@ def learn_joint_bpe_and_vocab(args):
         tmpout.close()
         tmpin = codecs.open(tmp.name, encoding='UTF-8')
 
-        vocab = learn_bpe.get_vocabulary(tmpin)
+        vocab = learn_bpe.get_vocabulary(tmpin, args.dict_input)
         tmpin.close()
         os.remove(tmp.name)
 
