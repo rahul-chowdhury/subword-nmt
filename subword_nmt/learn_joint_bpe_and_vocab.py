@@ -126,7 +126,7 @@ def learn_joint_bpe_and_vocab(args):
 
             train_file.seek(0)
             for line in train_file:
-                tmpout.write(bpe.segment(line).strip())
+                tmpout.write(bpe.process_line(line).strip())
                 tmpout.write('\n')
 
             tmpout.close()
