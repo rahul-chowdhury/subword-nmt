@@ -107,23 +107,34 @@ def learn_joint_bpe_and_vocab(args):
 
     # apply BPE to each training corpus and get vocabulary
     for train_file, vocab_file in zip(args.input, args.vocab):
+        if args.dict_input:
+            vocab = Counter()
+            for i, line in enumerate(train_file):
+                try:
+                    word, count = line.strip('\r\n ').split(' ')
+                    segments = bpe.segment(word)
+                except:
+                    print('Failed reading vocabulary file at line {0}: {1}'.format(i, line))
+                    sys.exit(1)
+                for seg in segments:
+                    vocab[seg] += int(count)
+        else:
+            tmp = tempfile.NamedTemporaryFile(delete=False)
+            tmp.close()
 
-        tmp = tempfile.NamedTemporaryFile(delete=False)
-        tmp.close()
+            tmpout = codecs.open(tmp.name, 'w', encoding='UTF-8')
 
-        tmpout = codecs.open(tmp.name, 'w', encoding='UTF-8')
+            train_file.seek(0)
+            for line in train_file:
+                tmpout.write(bpe.segment(line).strip())
+                tmpout.write('\n')
 
-        train_file.seek(0)
-        for line in train_file:
-            tmpout.write(bpe.segment(line).strip())
-            tmpout.write('\n')
+            tmpout.close()
+            tmpin = codecs.open(tmp.name, encoding='UTF-8')
 
-        tmpout.close()
-        tmpin = codecs.open(tmp.name, encoding='UTF-8')
-
-        vocab = learn_bpe.get_vocabulary(tmpin, args.dict_input)
-        tmpin.close()
-        os.remove(tmp.name)
+            vocab = learn_bpe.get_vocabulary(tmpin)
+            tmpin.close()
+            os.remove(tmp.name)
 
         for key, freq in sorted(vocab.items(), key=lambda x: x[1], reverse=True):
             vocab_file.write("{0} {1}\n".format(key, freq))
