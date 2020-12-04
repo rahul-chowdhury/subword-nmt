@@ -248,7 +248,7 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
         word = word[:-1] + (word[-1].replace('</w>',''),)
 
     if vocab:
-        word = check_vocab_and_split(word, bpe_codes_reverse, vocab, separator)
+        word = check_vocab_and_split(word, bpe_codes_reverse, vocab, separator, is_postpend)
 
     cache[orig] = word
     return word
