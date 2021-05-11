@@ -1,3 +1,6 @@
+# Working data directory
+data_bpe
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

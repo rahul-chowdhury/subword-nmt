@@ -51,6 +51,8 @@ def create_parser(subparsers=None):
         '--symbols', '-s', type=int, default=10000,
         help="Create this many new symbols (each representing a character n-gram) (default: %(default)s))")
     parser.add_argument(
+        '--special-vocab', help="Special vocab file, try to build vocab from this set before anything else")
+    parser.add_argument(
         '--min-frequency', type=int, default=2, metavar='FREQ',
         help='Stop if no symbol pair has frequency >= FREQ (default: %(default)s))')
     parser.add_argument('--dict-input', action="store_true",
@@ -201,8 +203,26 @@ def prune_stats(stats, big_stats, threshold):
             else:
                 big_stats[item] = freq
 
+def prune_zero_stats(stats):
+    """Prune statistics dict with zero count
 
-def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_dict=False, total_symbols=False, is_postpend=False):
+    When special vocab is defined, non-special vocab items corresponding to
+    the already-processed special vocabs (zero in count) are also eliminated.
+    """
+    for item, freq in list(stats.items()):
+        if freq < 1:
+            del stats[item]
+
+def load_special_vocab(special_vocab_file, original_vocab):
+    vocab = Counter()
+    with codecs.open(special_vocab_file, encoding='utf-8') as vocab_file:
+        for line in vocab_file:
+            word = line.strip('\r\n ')
+            vocab[word] = 1 + original_vocab[word]
+    return vocab
+
+
+def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_dict=False, total_symbols=False, is_postpend=False, special_vocab_file=None):
     """Learn num_symbols BPE operations from vocabulary, and write to outfile.
     """
 
@@ -213,17 +233,21 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
     outfile.write('#version: 0.2\n')
 
     vocab = get_vocabulary(infile, is_dict)
+    spec_vocab = load_special_vocab(special_vocab_file, vocab) if special_vocab_file else None
+
     vocab = dict([(('<w>'+x[0],)+tuple(x[1:]) ,y) for (x,y) in vocab.items()]) if is_postpend else \
         dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in vocab.items()])
     sorted_vocab = sorted(vocab.items(), key=lambda x: x[1], reverse=True)
-
     stats, indices = get_pair_statistics(sorted_vocab)
-    big_stats = copy.deepcopy(stats)
+    
+    if spec_vocab is not None:
+        spec_vocab = dict([(('<w>'+x[0],)+tuple(x[1:]) ,y) for (x,y) in spec_vocab.items()]) if is_postpend else \
+            dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in spec_vocab.items()])
 
     if total_symbols:
         uniq_char_internal = set()
         uniq_char_terminal = set()  # initial character for postpend, final otherwise
-        for word in vocab:
+        for word in list(vocab.keys()) + (list(spec_vocab.keys()) if spec_vocab is not None else []):
             if is_postpend:
                 uniq_char_terminal.add(word[0])
             else:
@@ -238,15 +262,57 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
         sys.stderr.write('Number of word-terminal characters: {0}\n'.format(len(uniq_char_terminal)))
         sys.stderr.write('Reducing number of merge operations by {0}\n'.format(len(uniq_char_internal) + len(uniq_char_terminal)))
         num_symbols -= len(uniq_char_internal) + len(uniq_char_terminal)
+    
+    spec_op_count = 0
+    if spec_vocab is not None:
+        sorted_spec_vocab = sorted(spec_vocab.items(), key=lambda x: x[1], reverse=True)
+        spec_stats, spec_indices = get_pair_statistics(sorted_spec_vocab)
+        big_spec_stats = copy.deepcopy(spec_stats)
+        
+        # threshold is inspired by Zipfian assumption, but should only affect speed
+        threshold = max(spec_stats.values()) / 10
+        if threshold < 1:
+            threshold = 1
+        for i in range(num_symbols):
+            most_frequent = max(spec_stats, key=lambda x: (spec_stats[x], x))
+            
+            # we probably missed the best pair because of pruning; go back to full statistics
+            if i and spec_stats[most_frequent] < threshold:
+                prune_stats(spec_stats, big_spec_stats, threshold)
+                spec_stats = copy.deepcopy(big_spec_stats)
+                most_frequent = max(spec_stats, key=lambda x: (spec_stats[x], x))
+                # threshold is inspired by Zipfian assumption, but should only affect speed
+                threshold = spec_stats[most_frequent] * i/(i+10000.0)
+                prune_stats(spec_stats, big_spec_stats, threshold)
+
+            if spec_stats[most_frequent] < 1:
+                sys.stderr.write('No pair has frequency >= 1 among special vocab. Stopping at {0:d}\n'.format(spec_op_count))
+                break
+
+            if verbose:
+                sys.stderr.write('pair {0}: {1} {2} -> {1}{2} (frequency {3})\n'.format(i, most_frequent[0], most_frequent[1], spec_stats[most_frequent]))
+            outfile.write('{0} {1}\n'.format(*most_frequent))
+            spec_changes = replace_pair(most_frequent, sorted_spec_vocab, spec_indices)
+            update_pair_statistics(most_frequent, spec_changes, spec_stats, spec_indices)
+            spec_stats[most_frequent] = 0
+            changes = replace_pair(most_frequent, sorted_vocab, indices)
+            update_pair_statistics(most_frequent, changes, stats, indices)  # update pair statistics for the original vocab
+            stats[most_frequent] = 0  # only store remaining items
+            if not i % 100:
+                prune_stats(spec_stats, big_spec_stats, threshold)
+            spec_op_count += 1
+        del big_spec_stats  # conserve memory
+        prune_zero_stats(stats)  # remove zero-count stats
 
     # threshold is inspired by Zipfian assumption, but should only affect speed
+    big_stats = copy.deepcopy(stats)
+    num_symbols -= spec_op_count
     threshold = max(stats.values()) / 10
     for i in range(num_symbols):
-        if stats:
-            most_frequent = max(stats, key=lambda x: (stats[x], x))
-
+        most_frequent = max(stats, key=lambda x: (stats[x], x))
+        
         # we probably missed the best pair because of pruning; go back to full statistics
-        if not stats or (i and stats[most_frequent] < threshold):
+        if i and stats[most_frequent] < threshold:
             prune_stats(stats, big_stats, threshold)
             stats = copy.deepcopy(big_stats)
             most_frequent = max(stats, key=lambda x: (stats[x], x))
@@ -255,7 +321,7 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
             prune_stats(stats, big_stats, threshold)
 
         if stats[most_frequent] < min_frequency:
-            sys.stderr.write('no pair has frequency >= {0}. Stopping\n'.format(min_frequency))
+            sys.stderr.write('No pair has frequency >= {0}. Stopping\n'.format(min_frequency))
             break
 
         if verbose:
@@ -298,4 +364,4 @@ if __name__ == '__main__':
     if args.output.name != '<stdout>':
         args.output = codecs.open(args.output.name, 'w', encoding='utf-8')
 
-    learn_bpe(args.input, args.output, args.symbols, args.min_frequency, args.verbose, is_dict=args.dict_input, total_symbols=args.total_symbols, is_postpend=args.postpend)
+    learn_bpe(args.input, args.output, args.symbols, args.min_frequency, args.verbose, is_dict=args.dict_input, total_symbols=args.total_symbols, is_postpend=args.postpend, special_vocab_file=args.special_vocab)

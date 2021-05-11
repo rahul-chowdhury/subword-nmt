@@ -58,6 +58,8 @@ def create_parser(subparsers=None):
         '--symbols', '-s', type=int, default=10000,
         help="Create this many new symbols (each representing a character n-gram) (default: %(default)s)")
     parser.add_argument(
+        '--special-vocab', help="Special vocab file, which should preferrably be unsegmented, unless symbol count already reaches limit")
+    parser.add_argument(
         '--separator', type=str, default='@@', metavar='STR',
         help="Separator between non-final subword units (default: '%(default)s')")
     parser.add_argument(
@@ -100,7 +102,7 @@ def learn_joint_bpe_and_vocab(args):
 
     # learn BPE on combined vocabulary
     with codecs.open(args.output.name, 'w', encoding='UTF-8') as output:
-        learn_bpe.learn_bpe(vocab_list, output, args.symbols, args.min_frequency, args.verbose, is_dict=True, total_symbols=args.total_symbols, is_postpend=args.postpend)
+        learn_bpe.learn_bpe(vocab_list, output, args.symbols, args.min_frequency, args.verbose, is_dict=True, total_symbols=args.total_symbols, is_postpend=args.postpend, special_vocab_file=args.special_vocab)
 
     with codecs.open(args.output.name, encoding='UTF-8') as codes:
         bpe = apply_bpe.BPE(codes, separator=args.separator, is_postpend=args.postpend)
@@ -135,9 +137,25 @@ def learn_joint_bpe_and_vocab(args):
             vocab = learn_bpe.get_vocabulary(tmpin)
             tmpin.close()
             os.remove(tmp.name)
-
+        
+        # if special vocab is defined, include them
+        if args.special_vocab:
+            with codecs.open(args.special_vocab, encoding='UTF-8') as specials_file:
+                for i, line in enumerate(specials_file):
+                    try:
+                        word = line.strip('\r\n ')
+                        segments = bpe.segment_tokens([word])
+                    except:
+                        print('Failed reading special vocabulary file at line {0}: {1}'.format(i, line))
+                        sys.exit(1)
+                    if len(segments) != 1:
+                        sys.stderr.write('WARNING: special vocab \'{0}\' not captured by merges, split into \'{1}\'\n'.format(word, ' '.join(segments)))
+                    for seg in segments:
+                        vocab[seg] += 1
+        
         for key, freq in sorted(vocab.items(), key=lambda x: x[1], reverse=True):
             vocab_file.write("{0} {1}\n".format(key, freq))
+        train_file.close()
         vocab_file.close()
 
 
