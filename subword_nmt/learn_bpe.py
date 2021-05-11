@@ -213,16 +213,32 @@ def prune_zero_stats(stats):
         if freq < 1:
             del stats[item]
 
-def load_special_vocab(special_vocab_file, original_vocab):
+def count_special_vocab(special_vocab_list, original_vocab):
     vocab = Counter()
-    with codecs.open(special_vocab_file, encoding='utf-8') as vocab_file:
-        for line in vocab_file:
-            word = line.strip('\r\n ')
-            vocab[word] = 1 + original_vocab[word]
+    for line in special_vocab_list:
+        word = line.strip('\r\n ')
+        vocab[word] = original_vocab[word]
     return vocab
 
+def extract_uniq_chars(vocab, is_postpend=False):
+    """Extract unique characters from iterable vocab, depending on whether postpend mode is active 
 
-def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_dict=False, total_symbols=False, is_postpend=False, special_vocab_file=None):
+    Returns two sets, one for internal characters, and another for terminal characters
+    """
+    uniq_char_internal = set()
+    uniq_char_terminal = set()
+    for word in vocab:
+        if is_postpend:
+            uniq_char_terminal.add(word[0])
+            for char in word[1:]:
+                uniq_char_internal.add(char)
+        else:
+            for char in word[:-1]:
+                uniq_char_internal.add(char)
+            uniq_char_terminal.add(word[-1])
+    return uniq_char_internal, uniq_char_terminal
+
+def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_dict=False, total_symbols=False, is_postpend=False, special_vocab=None):
     """Learn num_symbols BPE operations from vocabulary, and write to outfile.
     """
 
@@ -233,7 +249,7 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
     outfile.write('#version: 0.2\n')
 
     vocab = get_vocabulary(infile, is_dict)
-    spec_vocab = load_special_vocab(special_vocab_file, vocab) if special_vocab_file else None
+    spec_vocab = count_special_vocab(special_vocab, vocab) if special_vocab else None  # already in original vocab
 
     vocab = dict([(('<w>'+x[0],)+tuple(x[1:]) ,y) for (x,y) in vocab.items()]) if is_postpend else \
         dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in vocab.items()])
@@ -245,19 +261,7 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
             dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in spec_vocab.items()])
 
     if total_symbols:
-        uniq_char_internal = set()
-        uniq_char_terminal = set()  # initial character for postpend, final otherwise
-        for word in list(vocab.keys()) + (list(spec_vocab.keys()) if spec_vocab is not None else []):
-            if is_postpend:
-                uniq_char_terminal.add(word[0])
-            else:
-                uniq_char_internal.add(word[0])
-            for char in word[1:-1]:  # always internal
-                uniq_char_internal.add(char)
-            if is_postpend:
-                uniq_char_internal.add(word[-1])
-            else:
-                uniq_char_terminal.add(word[-1])
+        uniq_char_internal, uniq_char_terminal = extract_uniq_chars(vocab, is_postpend)
         sys.stderr.write('Number of word-internal characters: {0}\n'.format(len(uniq_char_internal)))
         sys.stderr.write('Number of word-terminal characters: {0}\n'.format(len(uniq_char_terminal)))
         sys.stderr.write('Reducing number of merge operations by {0}\n'.format(len(uniq_char_internal) + len(uniq_char_terminal)))

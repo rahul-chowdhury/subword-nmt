@@ -290,7 +290,7 @@ def check_vocab_and_split(orig, bpe_codes, vocab, separator, is_postpend=False):
     out = []
     
     segment = orig[0]
-    if (segment in vocab and is_postpend) or (segment + separator in vocab and not is_postpend):
+    if (segment in vocab and (is_postpend or len(orig) == 1)) or (segment + separator in vocab and not is_postpend):
         out.append(segment)
     else:
         for item in recursive_split(segment, bpe_codes, vocab, separator, is_postpend, True, len(orig) == 1):
