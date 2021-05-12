@@ -253,19 +253,21 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
 
     vocab = dict([(('<w>'+x[0],)+tuple(x[1:]) ,y) for (x,y) in vocab.items()]) if is_postpend else \
         dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in vocab.items()])
-    sorted_vocab = sorted(vocab.items(), key=lambda x: x[1], reverse=True)
-    stats, indices = get_pair_statistics(sorted_vocab)
-    
-    if spec_vocab is not None:
-        spec_vocab = dict([(('<w>'+x[0],)+tuple(x[1:]) ,y) for (x,y) in spec_vocab.items()]) if is_postpend else \
-            dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in spec_vocab.items()])
 
     if total_symbols:
         uniq_char_internal, uniq_char_terminal = extract_uniq_chars(vocab, is_postpend)
         sys.stderr.write('Number of word-internal characters: {0}\n'.format(len(uniq_char_internal)))
         sys.stderr.write('Number of word-terminal characters: {0}\n'.format(len(uniq_char_terminal)))
         sys.stderr.write('Reducing number of merge operations by {0}\n'.format(len(uniq_char_internal) + len(uniq_char_terminal)))
+        sys.stderr.flush()
         num_symbols -= len(uniq_char_internal) + len(uniq_char_terminal)
+    
+    sorted_vocab = sorted(vocab.items(), key=lambda x: x[1], reverse=True)
+    stats, indices = get_pair_statistics(sorted_vocab)
+    
+    if spec_vocab is not None:
+        spec_vocab = dict([(('<w>'+x[0],)+tuple(x[1:]) ,y) for (x,y) in spec_vocab.items()]) if is_postpend else \
+            dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in spec_vocab.items()])
     
     spec_op_count = 0
     if spec_vocab is not None:
@@ -304,6 +306,7 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
             stats[most_frequent] = 0  # only store remaining items
             if not i % 100:
                 prune_stats(spec_stats, big_spec_stats, threshold)
+                prune_zero_stats(stats)  # remove zero-count stats
             spec_op_count += 1
         del big_spec_stats  # conserve memory
         prune_zero_stats(stats)  # remove zero-count stats

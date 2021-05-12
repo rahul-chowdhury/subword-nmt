@@ -85,6 +85,11 @@ def create_parser(subparsers=None):
 
     return parser
 
+def yield_dict_lines(d):
+    it = d.iteritems() if sys.version_info < (3, 0) else d.items()
+    for k, v in it:
+        yield '{0} {1}'.format(k, v)
+
 def learn_joint_bpe_and_vocab(args):
 
     if args.vocab and len(args.input) != len(args.vocab):
@@ -109,7 +114,7 @@ def learn_joint_bpe_and_vocab(args):
         for word in args.special_vocab:
             full_vocab[word] += 1  # integrate special vocab to full_vocab
 
-    vocab_list = ['{0} {1}'.format(key, freq) for (key, freq) in full_vocab.items()]
+    vocab_list = yield_dict_lines(full_vocab)
 
     # learn BPE on combined vocabulary
     with codecs.open(args.output.name, 'w', encoding='UTF-8') as output:
