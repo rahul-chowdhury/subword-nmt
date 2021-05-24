@@ -202,6 +202,8 @@ def prune_stats(stats, big_stats, threshold):
                 big_stats[item] += freq
             else:
                 big_stats[item] = freq
+            if big_stats[item] <= 0:
+                del big_stats[item]
 
 def prune_zero_stats(stats):
     """Prune statistics dict with zero count
@@ -238,6 +240,9 @@ def extract_uniq_chars(vocab, is_postpend=False):
             uniq_char_terminal.add(word[-1])
     return uniq_char_internal, uniq_char_terminal
 
+def stats_max_or_nil(stats):
+    return max(stats, key=lambda x: (stats[x], x)) if len(stats) > 0 else None
+
 def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_dict=False, total_symbols=False, is_postpend=False, special_vocab=None):
     """Learn num_symbols BPE operations from vocabulary, and write to outfile.
     """
@@ -263,35 +268,42 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
         num_symbols -= len(uniq_char_internal) + len(uniq_char_terminal)
     
     sorted_vocab = sorted(vocab.items(), key=lambda x: x[1], reverse=True)
+    del vocab
     stats, indices = get_pair_statistics(sorted_vocab)
     
+    # threshold is inspired by Zipfian assumption, but should only affect speed
+    big_stats = copy.deepcopy(stats)
+
+    spec_op_count = 0
     if spec_vocab is not None:
         spec_vocab = dict([(('<w>'+x[0],)+tuple(x[1:]) ,y) for (x,y) in spec_vocab.items()]) if is_postpend else \
             dict([(tuple(x[:-1])+(x[-1]+'</w>',) ,y) for (x,y) in spec_vocab.items()])
-    
-    spec_op_count = 0
-    if spec_vocab is not None:
         sorted_spec_vocab = sorted(spec_vocab.items(), key=lambda x: x[1], reverse=True)
+        del spec_vocab
         spec_stats, spec_indices = get_pair_statistics(sorted_spec_vocab)
         big_spec_stats = copy.deepcopy(spec_stats)
         
         # threshold is inspired by Zipfian assumption, but should only affect speed
-        threshold = max(spec_stats.values()) / 10
-        if threshold < 1:
-            threshold = 1
+        spec_threshold = max(spec_stats.values()) / 10
+        orig_threshold = max(stats.values()) / 10
+        if spec_threshold < 1:
+            spec_threshold = 1
+        if orig_threshold < 1:
+            orig_threshold = 1
         for i in range(num_symbols):
-            most_frequent = max(spec_stats, key=lambda x: (spec_stats[x], x))
+            most_frequent = stats_max_or_nil(spec_stats)
             
             # we probably missed the best pair because of pruning; go back to full statistics
-            if i and spec_stats[most_frequent] < threshold:
-                prune_stats(spec_stats, big_spec_stats, threshold)
+            if i and spec_stats[most_frequent] < spec_threshold:
+                prune_stats(spec_stats, big_spec_stats, spec_threshold)
                 spec_stats = copy.deepcopy(big_spec_stats)
-                most_frequent = max(spec_stats, key=lambda x: (spec_stats[x], x))
-                # threshold is inspired by Zipfian assumption, but should only affect speed
-                threshold = spec_stats[most_frequent] * i/(i+10000.0)
-                prune_stats(spec_stats, big_spec_stats, threshold)
+                most_frequent = stats_max_or_nil(spec_stats)
+                if most_frequent is not None:
+                    # threshold is inspired by Zipfian assumption, but should only affect speed
+                    spec_threshold = spec_stats[most_frequent] * i/(i+10000.0)
+                    prune_stats(spec_stats, big_spec_stats, spec_threshold)
 
-            if spec_stats[most_frequent] < 1:
+            if most_frequent is None or spec_stats[most_frequent] < 1:
                 sys.stderr.write('No pair has frequency >= 1 among special vocab. Stopping at {0:d}\n'.format(spec_op_count))
                 break
 
@@ -305,29 +317,29 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
             update_pair_statistics(most_frequent, changes, stats, indices)  # update pair statistics for the original vocab
             stats[most_frequent] = 0  # only store remaining items
             if not i % 100:
-                prune_stats(spec_stats, big_spec_stats, threshold)
-                prune_zero_stats(stats)  # remove zero-count stats
+                prune_stats(spec_stats, big_spec_stats, spec_threshold)
+                prune_stats(stats, big_stats, orig_threshold)
+                outfile.flush()
             spec_op_count += 1
         del big_spec_stats  # conserve memory
         prune_zero_stats(stats)  # remove zero-count stats
-
-    # threshold is inspired by Zipfian assumption, but should only affect speed
-    big_stats = copy.deepcopy(stats)
+    
     num_symbols -= spec_op_count
     threshold = max(stats.values()) / 10
     for i in range(num_symbols):
-        most_frequent = max(stats, key=lambda x: (stats[x], x))
+        most_frequent = stats_max_or_nil(stats)
         
         # we probably missed the best pair because of pruning; go back to full statistics
         if i and stats[most_frequent] < threshold:
             prune_stats(stats, big_stats, threshold)
             stats = copy.deepcopy(big_stats)
-            most_frequent = max(stats, key=lambda x: (stats[x], x))
-            # threshold is inspired by Zipfian assumption, but should only affect speed
-            threshold = stats[most_frequent] * i/(i+10000.0)
-            prune_stats(stats, big_stats, threshold)
+            most_frequent = stats_max_or_nil(stats)
+            if most_frequent is not None:
+                # threshold is inspired by Zipfian assumption, but should only affect speed
+                threshold = stats[most_frequent] * i/(i+10000.0)
+                prune_stats(stats, big_stats, threshold)
 
-        if stats[most_frequent] < min_frequency:
+        if most_frequent is None or stats[most_frequent] < min_frequency:
             sys.stderr.write('No pair has frequency >= {0}. Stopping\n'.format(min_frequency))
             break
 
@@ -339,6 +351,7 @@ def learn_bpe(infile, outfile, num_symbols, min_frequency=2, verbose=False, is_d
         stats[most_frequent] = 0
         if not i % 100:
             prune_stats(stats, big_stats, threshold)
+            outfile.flush()
 
 
 if __name__ == '__main__':

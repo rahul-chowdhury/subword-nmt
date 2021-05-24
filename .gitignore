@@ -106,3 +106,7 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# smc
+.smc_config.json
+.toc_cli
