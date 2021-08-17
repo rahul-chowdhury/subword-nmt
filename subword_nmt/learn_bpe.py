@@ -382,15 +382,6 @@ if __name__ == '__main__':
         with codecs.open(args.special_vocab, encoding='UTF-8') as f:
             l = [line.strip('\r\n ') for line in codecs.open(args.special_vocab, encoding='UTF-8')]
         args.special_vocab = l
-    
-    # get combined vocabulary of all input texts
-    full_vocab = Counter()
-    for f in args.input:
-        full_vocab += get_vocabulary(f, args.dict_input)
-        f.seek(0)
-    if args.special_vocab:
-        for word in args.special_vocab:
-            full_vocab[word] += 1  # integrate special vocab to full_vocab
 
     # read/write files as UTF-8
     if args.input.name != '<stdin>':
@@ -398,4 +389,4 @@ if __name__ == '__main__':
     if args.output.name != '<stdout>':
         args.output = codecs.open(args.output.name, 'w', encoding='utf-8')
 
-    learn_bpe(full_vocab, args.output, args.symbols, args.min_frequency, args.verbose, is_dict=args.dict_input, total_symbols=args.total_symbols, is_postpend=args.postpend, special_vocab=args.special_vocab)
+    learn_bpe(args.input, args.output, args.symbols, args.min_frequency, args.verbose, is_dict=args.dict_input, total_symbols=args.total_symbols, is_postpend=args.postpend, special_vocab=args.special_vocab)
