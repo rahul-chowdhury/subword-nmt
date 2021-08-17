@@ -386,7 +386,7 @@ if __name__ == '__main__':
     # get combined vocabulary of all input texts
     full_vocab = Counter()
     for f in args.input:
-        full_vocab += learn_bpe.get_vocabulary(f, args.dict_input)
+        full_vocab += get_vocabulary(f, args.dict_input)
         f.seek(0)
     if args.special_vocab:
         for word in args.special_vocab:
