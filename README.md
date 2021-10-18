@@ -20,7 +20,7 @@ install via pip (from PyPI):
 
 install via pip (from Github):
 
-    pip install https://github.com/rsennrich/subword-nmt/archive/master.zip
+    pip install https://github.com/chrhad/subword-nmt/archive/master.zip
 
 alternatively, clone this repository; the scripts are executable stand-alone.
 
